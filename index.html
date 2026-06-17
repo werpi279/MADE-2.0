@@ -16,7 +16,7 @@
         height: 100vh;
       }
 
-      /* Full-viewport camera feed, mirrored so it feels like a mirror */
+      /* Layer 1 — camera feed: mirrored so it reads as a mirror */
       #video {
         position: absolute;
         inset: 0;
@@ -24,10 +24,20 @@
         height: 100%;
         object-fit: cover;
         transform: scaleX(-1);
-        opacity: 0.35;
+        opacity: 0.28;
+        z-index: 1;
       }
 
-      /* Landmark overlay — same size, also mirrored so x coords match */
+      /* Layer 2 — Three.js 3D scene: transparent background, NOT mirrored */
+      #scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 2;
+      }
+
+      /* Layer 3 — 2D landmark overlay: mirrored to match video */
       #overlay {
         position: absolute;
         inset: 0;
@@ -35,9 +45,10 @@
         height: 100%;
         transform: scaleX(-1);
         pointer-events: none;
+        z-index: 3;
       }
 
-      /* HUD */
+      /* Layer 4 — HUD */
       #hud {
         position: absolute;
         top: 1.2rem;
@@ -48,6 +59,7 @@
         align-items: center;
         gap: 0.4rem;
         pointer-events: none;
+        z-index: 4;
       }
       #hud h1 { font-size: 1.6rem; letter-spacing: 0.3em; color: #a0c4ff; }
       #hud .status {
@@ -58,7 +70,7 @@
         border-radius: 999px;
       }
 
-      /* Permission / loading screen shown until camera is ready */
+      /* Loading / permission screen */
       #splash {
         position: absolute;
         inset: 0;
@@ -77,19 +89,15 @@
     </style>
   </head>
   <body>
-    <!-- Loading / permission screen -->
     <div id="splash">
       <h1>MADE</h1>
       <p>Loading hand tracking model…<br>Camera permission required.</p>
     </div>
 
-    <!-- Camera feed -->
     <video id="video" autoplay playsinline muted></video>
-
-    <!-- Landmark overlay -->
+    <canvas id="scene"></canvas>
     <canvas id="overlay"></canvas>
 
-    <!-- HUD -->
     <div id="hud">
       <h1>MADE</h1>
       <div class="status" id="status">initialising…</div>
