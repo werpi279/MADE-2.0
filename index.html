@@ -6,34 +6,95 @@
     <title>MADE — Manual Approach in Digital Environment</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
+
       body {
-        font-family: system-ui, sans-serif;
         background: #0a0a0f;
         color: #e0e0e8;
-        min-height: 100vh;
+        font-family: system-ui, sans-serif;
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      /* Full-viewport camera feed, mirrored so it feels like a mirror */
+      #video {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: scaleX(-1);
+        opacity: 0.35;
+      }
+
+      /* Landmark overlay — same size, also mirrored so x coords match */
+      #overlay {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        transform: scaleX(-1);
+        pointer-events: none;
+      }
+
+      /* HUD */
+      #hud {
+        position: absolute;
+        top: 1.2rem;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        pointer-events: none;
+      }
+      #hud h1 { font-size: 1.6rem; letter-spacing: 0.3em; color: #a0c4ff; }
+      #hud .status {
+        font-size: 0.8rem;
+        color: #a0c4ff99;
+        padding: 0.25em 0.9em;
+        border: 1px solid #a0c4ff33;
+        border-radius: 999px;
+      }
+
+      /* Permission / loading screen shown until camera is ready */
+      #splash {
+        position: absolute;
+        inset: 0;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 1rem;
+        background: #0a0a0f;
+        z-index: 10;
+        transition: opacity 0.5s;
       }
-      h1 { font-size: 3rem; letter-spacing: 0.2em; color: #a0c4ff; }
-      p  { font-size: 1.1rem; opacity: 0.7; max-width: 480px; text-align: center; }
-      .badge {
-        margin-top: 1rem;
-        font-size: 0.85rem;
-        padding: 0.4em 1em;
-        border: 1px solid #a0c4ff44;
-        border-radius: 999px;
-        color: #a0c4ff99;
-      }
+      #splash h1 { font-size: 3rem; letter-spacing: 0.2em; color: #a0c4ff; }
+      #splash p  { font-size: 1rem; opacity: 0.6; max-width: 380px; text-align: center; }
+      #splash.hidden { opacity: 0; pointer-events: none; }
     </style>
   </head>
   <body>
-    <h1>MADE</h1>
-    <p>Manual Approach in Digital Environment<br>
-       Webcam + voice driven 3D clay — no install, no account, runs in your browser.</p>
-    <div class="badge">M0 — scaffold ✓ — camera &amp; hand tracking coming in M1</div>
+    <!-- Loading / permission screen -->
+    <div id="splash">
+      <h1>MADE</h1>
+      <p>Loading hand tracking model…<br>Camera permission required.</p>
+    </div>
+
+    <!-- Camera feed -->
+    <video id="video" autoplay playsinline muted></video>
+
+    <!-- Landmark overlay -->
+    <canvas id="overlay"></canvas>
+
+    <!-- HUD -->
+    <div id="hud">
+      <h1>MADE</h1>
+      <div class="status" id="status">initialising…</div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
