@@ -30,14 +30,19 @@ export class NavigationIntent {
   // per-hand: last position when grab was initiated (for first-frame delta kill)
   private grabStart: [Vector3 | null, Vector3 | null] = [null, null]
 
-  update(result: HandLandmarkerResult, workpiece: Group, sphere: NavSphere): void {
+  update(
+    result: HandLandmarkerResult,
+    workpiece: Group,
+    sphere: NavSphere,
+    skipHands: Set<number> = new Set(),
+  ): void {
     const lms = result.landmarks
 
     // ── 1. Per-hand state transitions ──────────────────────────────────────
     for (let h = 0; h < 2; h++) {
       const track = this.tracks[h]
 
-      if (h >= lms.length) {
+      if (h >= lms.length || skipHands.has(h)) {
         track.state = 'idle'
         this.grabStart[h] = null
         continue

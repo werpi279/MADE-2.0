@@ -4,9 +4,12 @@ import { createHandLandmarker } from './tracking/handLandmarker'
 import { drawHandLandmarks } from './tracking/drawLandmarks'
 import { createScene } from './geometry/scene'
 import { createPlaceholderMesh } from './geometry/placeholder'
+import { SculptEngine } from './geometry/sculpt'
 import { NavSphere } from './feedback/navSphere'
+import { InfluenceBlob } from './feedback/influenceBlob'
 import { NavigationIntent } from './intent/navigate'
 import { CreateIntent } from './intent/create'
+import { SculptIntent } from './intent/sculpt'
 
 const splash   = document.getElementById('splash')  as HTMLDivElement
 const video    = document.getElementById('video')   as HTMLVideoElement
@@ -29,18 +32,24 @@ async function main(): Promise<void> {
   // ── Three.js scene ──────────────────────────────────────────────────────
   const { renderer, scene, camera } = createScene(sceneEl)
 
-  // The workpiece Group holds all clay geometry + the nav sphere.
-  // Everything inside moves together when the user navigates.
   const workpiece = new Group()
-  workpiece.add(createPlaceholderMesh())
+
+  const clayMesh = createPlaceholderMesh()
+  workpiece.add(clayMesh)
 
   const navSphere = new NavSphere()
   workpiece.add(navSphere.object)
 
+  const blob = new InfluenceBlob()
+  workpiece.add(blob.object)      // blob in workpiece local space
+
   scene.add(workpiece)
 
-  const navIntent    = new NavigationIntent()
+  // ── Intent setup ────────────────────────────────────────────────────────
+  const sculptEngine = new SculptEngine(clayMesh)
+  const sculptIntent = new SculptIntent(sculptEngine, blob)
   const createIntent = new CreateIntent(workpiece)
+  const navIntent    = new NavigationIntent()
 
   // ── Camera + hand tracking ──────────────────────────────────────────────
   setStatus('requesting camera…')
@@ -56,7 +65,7 @@ async function main(): Promise<void> {
   })
 
   splash.classList.add('hidden')
-  setStatus('M3 — point to draw · grab sphere to navigate')
+  setStatus('M4 — point to draw · pinch surface to sculpt · grab sphere to navigate')
 
   let lastVideoTime = -1
 
@@ -65,23 +74,24 @@ async function main(): Promise<void> {
       lastVideoTime = capture.video.currentTime
 
       const result = landmarker.detectForVideo(capture.video, now)
-
       drawHandLandmarks(ctx2d, result, overlay.width, overlay.height)
 
-      // CREATE runs first — it checks its own eligibility (pointing + far from sphere)
+      // Priority: SCULPT > CREATE > NAVIGATE.
+      // SculptIntent returns the hand indices it consumed so Navigate can skip them.
+      const sculpted = sculptIntent.update(result, workpiece)
       createIntent.update(result)
-
-      // NAVIGATE runs for all hands (it checks proximity to sphere internally)
-      navIntent.update(result, workpiece, navSphere)
+      navIntent.update(result, workpiece, navSphere, sculpted)
 
       const count = result.landmarks.length
-      const drawing = createIntent.isDrawing
-      const msg = count === 0
-        ? 'M3 — show your hands'
-        : drawing
-          ? 'M3 — drawing…'
-          : 'M3 — point to draw · grab sphere to navigate'
-      setStatus(msg)
+      setStatus(
+        count === 0
+          ? 'M4 — show your hands'
+          : sculpted.size
+            ? 'M4 — sculpting'
+            : createIntent.isDrawing
+              ? 'M4 — drawing'
+              : 'M4 — point · pinch surface · grab sphere',
+      )
     }
 
     renderer.render(scene, camera)

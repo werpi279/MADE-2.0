@@ -48,6 +48,16 @@ export function thumbIndexRadius(lm: NormalizedLandmark[]): number {
   return Math.max(0.02, Math.min(0.12, 0.02 + (d - 0.07) * 0.56))
 }
 
+/**
+ * Two open palms cradling the object: both hands open, neither pinching or pointing.
+ * Used to distinguish uniform scale (cup object) from axis stretch (grip two sides).
+ */
+export function isCupPose(lm0: NormalizedLandmark[], lm1: NormalizedLandmark[]): boolean {
+  if (isPinch(lm0) || isPinch(lm1)) return false
+  if (isPointing(lm0) || isPointing(lm1)) return false
+  return handOpenness(lm0) > 0.55 && handOpenness(lm1) > 0.55
+}
+
 export function palmCenter(lm: NormalizedLandmark[]): { x: number; y: number; z: number } {
   const pts = [lm[0], lm[5], lm[9], lm[13], lm[17]]
   return {
