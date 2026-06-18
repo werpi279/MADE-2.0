@@ -1,5 +1,6 @@
 import { Mesh, Vector3 } from 'three'
 import { MeshBVH } from 'three-mesh-bvh'
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 const SCULPT_STRENGTH = 0.45
 const SMOOTH_WEIGHT   = 0.3
@@ -21,11 +22,17 @@ export class SculptEngine {
   private bvhDirty = false
 
   constructor(private readonly mesh: Mesh) {
+    // Three.js IcosahedronGeometry is non-indexed (each face owns 3 unique vertices).
+    // mergeVertices() welds coincident vertices and produces an index buffer, which
+    // is required by three-mesh-bvh and for correct Laplacian smoothing across faces.
+    if (!mesh.geometry.index) {
+      mesh.geometry = mergeVertices(mesh.geometry)
+      mesh.geometry.computeVertexNormals()
+    }
     const geo = mesh.geometry
-    if (!geo.index) throw new Error('SculptEngine requires indexed geometry')
     this.pos  = geo.attributes.position.array as unknown as Float32Array
     this.bvh  = new MeshBVH(geo)
-    this.adj  = buildAdj(geo.index.array, this.pos.length / 3)
+    this.adj  = buildAdj(geo.index!.array, this.pos.length / 3)
   }
 
   /** Return the closest surface point to a workpiece-local position. */

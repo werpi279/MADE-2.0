@@ -45,9 +45,7 @@ async function main(): Promise<void> {
 
   scene.add(workpiece)
 
-  // ── Intent setup ────────────────────────────────────────────────────────
-  const sculptEngine = new SculptEngine(clayMesh)
-  const sculptIntent = new SculptIntent(sculptEngine, blob)
+  // Camera and model load first — nothing should block permission request
   const createIntent = new CreateIntent(workpiece)
   const navIntent    = new NavigationIntent()
 
@@ -63,6 +61,10 @@ async function main(): Promise<void> {
     setStatus(`model load error: ${err.message}`)
     throw err
   })
+
+  // ── Sculpt engine (needs camera+model first to guarantee we got this far) ──
+  const sculptEngine = new SculptEngine(clayMesh)
+  const sculptIntent = new SculptIntent(sculptEngine, blob)
 
   splash.classList.add('hidden')
   setStatus('M4 — point to draw · pinch surface to sculpt · grab sphere to navigate')
