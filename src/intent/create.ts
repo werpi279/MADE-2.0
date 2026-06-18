@@ -1,13 +1,16 @@
 import { Group, Vector3 } from 'three'
 import type { HandLandmarkerResult } from '../tracking/handLandmarker'
-import { isPointing, thumbIndexRadius } from '../recognizer/gestures'
+import { isPointing, isPinch, thumbIndexRadius } from '../recognizer/gestures'
 import { landmarkToScene, handToScene } from '../mapping/volume'
 import { TubeBuilder } from '../geometry/tubeBuilder'
 import { FrameExtruder } from '../geometry/frameExtruder'
-import { SPHERE_RADIUS } from '../feedback/navSphere'
 
-// A hand must be at least this far from the nav sphere to be in CREATE space
-const CREATE_MIN_DIST = SPHERE_RADIUS * 1.4
+// Debounce constants — prevents isPointing flicker from starting/stopping strokes
+const ONSET_FRAMES   = 4   // consecutive pointing frames needed to START a stroke
+const RELEASE_FRAMES = 8   // consecutive non-pointing frames needed to END a stroke
+
+// Two-hand frame: both hands must point together for this many frames
+const FRAME_ONSET = 5
 
 type CoilState = 'idle' | 'drawing'
 type FramePhase = 'idle' | 'framing' | 'extruding'
@@ -17,38 +20,45 @@ export class CreateIntent {
   private builders: TubeBuilder[]
   private extruder: FrameExtruder
 
+  // Debounce counters per hand
+  private onsetCount:   number[] = [0, 0]   // frames of consecutive pointing
+  private releaseCount: number[] = [0, 0]   // frames of consecutive not-pointing
+
   private framePhase: FramePhase = 'idle'
   private frameBaseDist = 0
+  private frameBothCount = 0               // frames both hands pointing together
 
   constructor(private readonly workpiece: Group) {
     this.builders = [new TubeBuilder(), new TubeBuilder()]
     this.extruder = new FrameExtruder()
-    // Live meshes live in the workpiece so they move with navigation
     workpiece.add(this.builders[0].liveMesh)
     workpiece.add(this.builders[1].liveMesh)
     workpiece.add(this.extruder.previewMesh)
   }
 
-  /**
-   * Called every video frame.
-   * workpiece.position is the nav sphere centre (world space).
-   */
   update(result: HandLandmarkerResult): void {
     const lms = result.landmarks
-
-    // Ensure workpiece world matrix is current so worldToLocal is accurate
     this.workpiece.updateWorldMatrix(true, false)
 
-    // Per-hand eligibility: index extended + far from sphere
-    const eligible = lms.map(lm =>
-      isPointing(lm) &&
-      handToScene(lm).distanceTo(this.workpiece.getWorldPosition(new Vector3())) > CREATE_MIN_DIST,
+    // ── Raw per-hand pointing check (no distance gate — the gesture IS the intent) ──
+    // Pointing is mutually exclusive with pinching (index+thumb together), so there
+    // is no accidental conflict with the NAVIGATE pinch gesture.
+    const rawPointing = [false, false]
+    for (let h = 0; h < 2; h++) {
+      rawPointing[h] = h < lms.length && isPointing(lms[h]) && !isPinch(lms[h])
+    }
+
+    // ── Two-hand frame detection (debounced) ─────────────────────────────────────
+    const rawBoth = rawPointing[0] && rawPointing[1] && lms.length === 2
+    if (rawBoth) { this.frameBothCount++ } else { this.frameBothCount = 0 }
+    const bothPointing = rawBoth && (
+      this.framePhase !== 'idle'           // already in frame mode: sustain freely
+        ? true
+        : this.frameBothCount >= FRAME_ONSET  // onset threshold
     )
 
-    const bothEligible = eligible.length === 2 && eligible[0] && eligible[1]
-
-    if (bothEligible) {
-      // ── Two-hand frame → extrude ────────────────────────────────────
+    if (bothPointing) {
+      // ── Two-hand frame → extrude ─────────────────────────────────────────
       this._endCoil(0)
       this._endCoil(1)
 
@@ -56,42 +66,57 @@ export class CreateIntent {
       const p1w = handToScene(lms[1])
       const centerWorld = p0w.clone().add(p1w).multiplyScalar(0.5)
       const dist = p0w.distanceTo(p1w)
-      const radius = dist * 0.5
+      const radius = Math.max(dist * 0.5, 0.1)
       const height = Math.max(0, dist - this.frameBaseDist) * 0.8
 
       if (this.framePhase === 'idle') {
         this.framePhase = 'framing'
         this.frameBaseDist = dist
       }
-      if (height > 0.03) this.framePhase = 'extruding'
+      if (height > 0.05) this.framePhase = 'extruding'
 
-      // Preview lives in workpiece local space
       const centerLocal = this.workpiece.worldToLocal(centerWorld.clone())
       this.extruder.update(centerLocal, radius, height)
 
     } else {
-      // ── Commit / cancel frame ───────────────────────────────────────
+      // ── Commit / cancel frame ─────────────────────────────────────────────
       if (this.framePhase !== 'idle') {
         if (this.framePhase === 'extruding') {
-          const m = this.extruder.commit()
-          this.workpiece.add(m)
+          this.workpiece.add(this.extruder.commit())
         } else {
           this.extruder.cancel()
         }
         this.framePhase = 'idle'
         this.frameBaseDist = 0
+        this.frameBothCount = 0
       }
 
-      // ── Per-hand coil ───────────────────────────────────────────────
+      // ── Per-hand coil (debounced) ─────────────────────────────────────────
       for (let h = 0; h < 2; h++) {
-        if (h >= lms.length || !eligible[h]) {
+        // Update debounce counters
+        if (rawPointing[h]) {
+          this.onsetCount[h]++
+          this.releaseCount[h] = 0
+        } else {
+          this.releaseCount[h]++
+          this.onsetCount[h] = 0
+        }
+
+        const shouldDraw = this.coilState[h] === 'drawing'
+          ? this.releaseCount[h] < RELEASE_FRAMES   // keep drawing through brief gaps
+          : this.onsetCount[h] >= ONSET_FRAMES       // start only after stable gesture
+
+        if (!shouldDraw) {
           this._endCoil(h)
           continue
         }
 
         const lm = lms[h]
-        // Index tip in world space → workpiece local space
-        const tipWorld = landmarkToScene({ x: lm[8].x, y: lm[8].y, z: lm[8].z ?? 0 })
+
+        // Index tip → workpiece local space.
+        // z is set to 0: MediaPipe normalised-landmark z is too noisy to use raw.
+        // The result is a clean XY coil that doesn't jitter in depth.
+        const tipWorld = landmarkToScene({ x: lm[8].x, y: lm[8].y, z: 0 })
         const tipLocal = this.workpiece.worldToLocal(tipWorld.clone())
         const r = thumbIndexRadius(lm)
 
@@ -112,7 +137,6 @@ export class CreateIntent {
     if (m) this.workpiece.add(m)
   }
 
-  /** True if any hand is actively drawing a coil. */
   get isDrawing(): boolean {
     return this.coilState.some(s => s === 'drawing') || this.framePhase !== 'idle'
   }
