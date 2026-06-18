@@ -6,13 +6,14 @@ import { createScene } from './geometry/scene'
 import { createPlaceholderMesh } from './geometry/placeholder'
 import { NavSphere } from './feedback/navSphere'
 import { NavigationIntent } from './intent/navigate'
+import { CreateIntent } from './intent/create'
 
-const splash  = document.getElementById('splash')  as HTMLDivElement
-const video   = document.getElementById('video')   as HTMLVideoElement
-const sceneEl = document.getElementById('scene')   as HTMLCanvasElement
-const overlay = document.getElementById('overlay') as HTMLCanvasElement
-const statusEl = document.getElementById('status') as HTMLDivElement
-const ctx2d   = overlay.getContext('2d')!
+const splash   = document.getElementById('splash')  as HTMLDivElement
+const video    = document.getElementById('video')   as HTMLVideoElement
+const sceneEl  = document.getElementById('scene')   as HTMLCanvasElement
+const overlay  = document.getElementById('overlay') as HTMLCanvasElement
+const statusEl = document.getElementById('status')  as HTMLDivElement
+const ctx2d    = overlay.getContext('2d')!
 
 function setStatus(msg: string): void { statusEl.textContent = msg }
 
@@ -28,15 +29,18 @@ async function main(): Promise<void> {
   // ── Three.js scene ──────────────────────────────────────────────────────
   const { renderer, scene, camera } = createScene(sceneEl)
 
+  // The workpiece Group holds all clay geometry + the nav sphere.
+  // Everything inside moves together when the user navigates.
   const workpiece = new Group()
   workpiece.add(createPlaceholderMesh())
 
   const navSphere = new NavSphere()
-  workpiece.add(navSphere.object)   // sphere follows workpiece automatically
+  workpiece.add(navSphere.object)
 
   scene.add(workpiece)
 
-  const navIntent = new NavigationIntent()
+  const navIntent    = new NavigationIntent()
+  const createIntent = new CreateIntent(workpiece)
 
   // ── Camera + hand tracking ──────────────────────────────────────────────
   setStatus('requesting camera…')
@@ -52,30 +56,35 @@ async function main(): Promise<void> {
   })
 
   splash.classList.add('hidden')
-  setStatus('M2 — grab the sphere')
+  setStatus('M3 — point to draw · grab sphere to navigate')
 
   let lastVideoTime = -1
 
   function tick(now: number): void {
-    // Process new video frame
     if (capture.video.videoWidth > 0 && capture.video.currentTime !== lastVideoTime) {
       lastVideoTime = capture.video.currentTime
 
       const result = landmarker.detectForVideo(capture.video, now)
 
-      // Update 2D landmark overlay
       drawHandLandmarks(ctx2d, result, overlay.width, overlay.height)
 
-      // Update navigation intent + workpiece transform
+      // CREATE runs first — it checks its own eligibility (pointing + far from sphere)
+      createIntent.update(result)
+
+      // NAVIGATE runs for all hands (it checks proximity to sphere internally)
       navIntent.update(result, workpiece, navSphere)
 
       const count = result.landmarks.length
-      setStatus(count === 0 ? 'M2 — show your hands' : `M2 — ${count} hand${count > 1 ? 's' : ''} — grab the sphere`)
+      const drawing = createIntent.isDrawing
+      const msg = count === 0
+        ? 'M3 — show your hands'
+        : drawing
+          ? 'M3 — drawing…'
+          : 'M3 — point to draw · grab sphere to navigate'
+      setStatus(msg)
     }
 
-    // Always render the 3D scene every frame
     renderer.render(scene, camera)
-
     requestAnimationFrame(tick)
   }
 

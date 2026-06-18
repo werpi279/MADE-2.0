@@ -35,6 +35,19 @@ export function wristRoll(lm: NormalizedLandmark[]): number {
   return Math.atan2(dy, dx)
 }
 
+/**
+ * Maps thumb–index gap to a tube radius in scene units.
+ * d ≈ 0.07 (near-pinch) → 0.02;  d ≈ 0.25 (wide open) → 0.12
+ */
+export function thumbIndexRadius(lm: NormalizedLandmark[]): number {
+  const d = Math.hypot(
+    lm[4].x - lm[8].x,
+    lm[4].y - lm[8].y,
+    (lm[4].z ?? 0) - (lm[8].z ?? 0),
+  )
+  return Math.max(0.02, Math.min(0.12, 0.02 + (d - 0.07) * 0.56))
+}
+
 export function palmCenter(lm: NormalizedLandmark[]): { x: number; y: number; z: number } {
   const pts = [lm[0], lm[5], lm[9], lm[13], lm[17]]
   return {
