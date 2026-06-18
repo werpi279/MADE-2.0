@@ -10,6 +10,7 @@ import { InfluenceBlob } from './feedback/influenceBlob'
 import { NavigationIntent } from './intent/navigate'
 import { CreateIntent } from './intent/create'
 import { SculptIntent } from './intent/sculpt'
+import { BubbleIntent } from './intent/bubble'
 
 const splash    = document.getElementById('splash')     as HTMLDivElement
 const video     = document.getElementById('video')      as HTMLVideoElement
@@ -69,9 +70,10 @@ async function main(): Promise<void> {
     throw err
   })
 
-  // ── Sculpt engine (needs camera+model first to guarantee we got this far) ──
+  // ── Sculpt + bubble engines (needs camera+model first) ──────────────────────
   const sculptEngine = new SculptEngine(clayMesh)
   const sculptIntent = new SculptIntent(sculptEngine, blob)
+  const bubbleIntent = new BubbleIntent(sculptEngine, workpiece)
 
   splash.classList.add('hidden')
   setStatus('M4 — point to draw · pinch surface to sculpt · grab sphere to navigate')
@@ -85,21 +87,29 @@ async function main(): Promise<void> {
       const result = landmarker.detectForVideo(capture.video, now)
       drawHandLandmarks(ctx2d, result, overlay.width, overlay.height)
 
-      // Priority: SCULPT > CREATE > NAVIGATE.
-      // SculptIntent returns the hand indices it consumed so Navigate can skip them.
-      const sculpted = sculptIntent.update(result, workpiece)
-      createIntent.update(result)
-      navIntent.update(result, workpiece, navSphere, sculpted)
+      // Priority: BUBBLE_CAGE > SCULPT (with bubble mask) > CREATE > NAVIGATE.
+      // BubbleIntent also claims its drawing hand so CreateIntent won't draw a coil.
+      const bubbleClaimed = bubbleIntent.update(result)
+      const sculpted = sculptIntent.update(
+        result, workpiece,
+        bubbleIntent.getVertexWeights(),
+        bubbleClaimed,
+      )
+      const allClaimed = new Set([...bubbleClaimed, ...sculpted])
+      createIntent.update(result, allClaimed)
+      navIntent.update(result, workpiece, navSphere, allClaimed)
 
       const count = result.landmarks.length
       setStatus(
         count === 0
-          ? 'M4 — show your hands'
-          : sculpted.size
-            ? 'M4 — sculpting'
-            : createIntent.isDrawing
-              ? 'M4 — drawing'
-              : 'M4 — point · pinch surface · grab sphere',
+          ? 'M5 — show your hands'
+          : bubbleIntent.isActive
+            ? 'M5 — bubble active · cage on shell · sculpt inside · poke to dismiss'
+            : sculpted.size
+              ? 'M5 — sculpting'
+              : createIntent.isDrawing
+                ? 'M5 — drawing'
+                : 'M5 — point to draw · loop to bubble · pinch surface to sculpt · grab sphere',
       )
     }
 

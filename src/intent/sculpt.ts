@@ -32,7 +32,12 @@ export class SculptIntent {
   ) {}
 
   /** Returns the set of hand indices this intent consumed so NavigationIntent can skip them. */
-  update(result: HandLandmarkerResult, workpiece: Group): Set<number> {
+  update(
+    result: HandLandmarkerResult,
+    workpiece: Group,
+    mask?: Map<number, number> | null,
+    skipHands: Set<number> = new Set(),
+  ): Set<number> {
     const lms = result.landmarks
     const claimed = new Set<number>()
 
@@ -120,6 +125,13 @@ export class SculptIntent {
         continue
       }
 
+      // Hand consumed by a higher-priority intent (e.g. bubble cage): release any session
+      if (skipHands.has(h)) {
+        if (track.engagedPinch) { this.engine.rebuildBVH(); track.engagedPinch = false }
+        track.state = 'idle'
+        continue
+      }
+
       // ── Sticky grab: once pinching at surface, stay claimed until pinch releases ──
       // Prevents sculpt session from being stolen by NavigationIntent when the hand
       // drifts slightly off the mesh surface during a pull gesture (Bug 3 fix).
@@ -137,7 +149,7 @@ export class SculptIntent {
           // mesh and would cover all vertices with its falloff radius (Bug 2 fix).
           const delta = localPos[h].clone().sub(track.prevPos)
           if (delta.length() > 0.001) {
-            this.engine.deform(hit.point, delta, falloff)
+            this.engine.deform(hit.point, delta, falloff, mask ?? undefined)
           }
           track.prevPos = localPos[h].clone()
           track.state = 'sculpting'
@@ -167,8 +179,9 @@ export class SculptIntent {
         // Deform starts next frame only after real movement (Bug 2 fix: prevents
         // spurious inward delta from the hover→pinch state transition).
         track.engagedPinch = true
-        track.state = 'sculpting'
+        track.state  = 'sculpting'
         track.prevPos = localPos[h].clone()
+        // (mask will be applied from next frame onward via the engagedPinch path)
       }
     }
 

@@ -36,7 +36,7 @@ export class CreateIntent {
     workpiece.add(this.extruder.previewMesh)
   }
 
-  update(result: HandLandmarkerResult): void {
+  update(result: HandLandmarkerResult, skipHands: Set<number> = new Set()): void {
     const lms = result.landmarks
     this.workpiece.updateWorldMatrix(true, false)
 
@@ -45,7 +45,7 @@ export class CreateIntent {
     // is no accidental conflict with the NAVIGATE pinch gesture.
     const rawPointing = [false, false]
     for (let h = 0; h < 2; h++) {
-      rawPointing[h] = h < lms.length && isPointing(lms[h]) && !isPinch(lms[h])
+      rawPointing[h] = h < lms.length && !skipHands.has(h) && isPointing(lms[h]) && !isPinch(lms[h])
     }
 
     // ── Two-hand frame detection (debounced) ─────────────────────────────────────

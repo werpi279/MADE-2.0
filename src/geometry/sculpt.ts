@@ -46,19 +46,55 @@ export class SculptEngine {
     }
   }
 
-  /** Push/pull vertices near localPt by delta with smooth falloff. */
-  deform(localPt: Vector3, delta: Vector3, falloff: number): void {
+  /** Raw access to vertex position buffer for BubbleRegion construction. */
+  getPositions(): Float32Array { return this.pos }
+
+  /** Translate captured (weighted) vertices by delta. Used by bubble cage mode. */
+  translateCapture(weights: Map<number, number>, delta: Vector3): void {
+    const p = this.pos
+    for (const [i, w] of weights) {
+      p[i*3]   += delta.x * w
+      p[i*3+1] += delta.y * w
+      p[i*3+2] += delta.z * w
+    }
+    this.mesh.geometry.attributes.position.needsUpdate = true
+    this.mesh.geometry.computeVertexNormals()
+    this.bvhDirty = true
+  }
+
+  /** Scale captured vertices around a pivot. Used by bubble cage scale. */
+  scaleCapture(weights: Map<number, number>, center: Vector3, factor: number): void {
+    const p = this.pos
+    for (const [i, w] of weights) {
+      const rx = p[i*3]   - center.x
+      const ry = p[i*3+1] - center.y
+      const rz = p[i*3+2] - center.z
+      const s = 1 + (factor - 1) * w
+      p[i*3]   = center.x + rx * s
+      p[i*3+1] = center.y + ry * s
+      p[i*3+2] = center.z + rz * s
+    }
+    this.mesh.geometry.attributes.position.needsUpdate = true
+    this.mesh.geometry.computeVertexNormals()
+    this.bvhDirty = true
+  }
+
+  /** Push/pull vertices near localPt by delta with smooth falloff.
+   *  Optional mask limits which vertices are affected (bubble mask mode). */
+  deform(localPt: Vector3, delta: Vector3, falloff: number, mask?: Map<number, number>): void {
     const p = this.pos
     const n = p.length / 3
     const mod: number[] = []
 
     for (let i = 0; i < n; i++) {
+      const mw = mask ? (mask.get(i) ?? 0) : 1
+      if (mw <= 0) continue
       const dx = p[i*3]   - localPt.x
       const dy = p[i*3+1] - localPt.y
       const dz = p[i*3+2] - localPt.z
       const d  = Math.sqrt(dx*dx + dy*dy + dz*dz)
       if (d >= falloff) continue
-      const w = (1 - d / falloff) ** 2 * SCULPT_STRENGTH
+      const w = (1 - d / falloff) ** 2 * SCULPT_STRENGTH * mw
       p[i*3]   += delta.x * w
       p[i*3+1] += delta.y * w
       p[i*3+2] += delta.z * w
