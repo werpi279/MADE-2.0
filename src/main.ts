@@ -11,6 +11,7 @@ import { NavigationIntent } from './intent/navigate'
 import { CreateIntent } from './intent/create'
 import { SculptIntent } from './intent/sculpt'
 import { BubbleIntent } from './intent/bubble'
+import type { HandLandmarkerResult } from './tracking/handLandmarker'
 
 const splash    = document.getElementById('splash')     as HTMLDivElement
 const video     = document.getElementById('video')      as HTMLVideoElement
@@ -21,6 +22,24 @@ const resetBtn  = document.getElementById('reset-btn')  as HTMLButtonElement
 const ctx2d     = overlay.getContext('2d')!
 
 function setStatus(msg: string): void { statusEl.textContent = msg }
+
+/**
+ * Classify each detected hand as the user's physical left or right hand.
+ * In a selfie-camera setup the user's left hand appears on the right side of the
+ * camera image (lm[9].x > 0.5 in normalised coords), so we use that as the split.
+ * Returns [leftHandIndices, rightHandIndices].
+ */
+function classifyHands(result: HandLandmarkerResult): [Set<number>, Set<number>] {
+  const left = new Set<number>()
+  const right = new Set<number>()
+  result.landmarks.forEach((lm, h) => {
+    // Middle MCP (lm[9]) is a stable landmark at the back of the hand.
+    // x > 0.5 in camera image = user's left hand (selfie mirror).
+    if (lm[9].x > 0.5) left.add(h)
+    else right.add(h)
+  })
+  return [left, right]
+}
 
 function resizeOverlay(): void {
   overlay.width  = window.innerWidth
@@ -87,29 +106,34 @@ async function main(): Promise<void> {
       const result = landmarker.detectForVideo(capture.video, now)
       drawHandLandmarks(ctx2d, result, overlay.width, overlay.height)
 
-      // Priority: BUBBLE_CAGE > SCULPT (with bubble mask) > CREATE > NAVIGATE.
-      // BubbleIntent also claims its drawing hand so CreateIntent won't draw a coil.
-      const bubbleClaimed = bubbleIntent.update(result)
+      // Classify hands: left (user's physical left) → navigation only
+      //                  right (user's physical right) → modelling only
+      const [leftHands, rightHands] = classifyHands(result)
+
+      // Priority within modelling (right hand): BUBBLE_CAGE > SCULPT(mask) > CREATE
+      const bubbleClaimed = bubbleIntent.update(result, leftHands)
       const sculpted = sculptIntent.update(
         result, workpiece,
         bubbleIntent.getVertexWeights(),
-        bubbleClaimed,
+        new Set([...leftHands, ...bubbleClaimed]),
       )
-      const allClaimed = new Set([...bubbleClaimed, ...sculpted])
-      createIntent.update(result, allClaimed)
-      navIntent.update(result, workpiece, navSphere, allClaimed)
+      const allModelClaimed = new Set([...bubbleClaimed, ...sculpted])
+      createIntent.update(result, new Set([...leftHands, ...allModelClaimed]))
+
+      // Navigation: left hand only — skip right hands and any claimed modelling hands
+      navIntent.update(result, workpiece, navSphere, new Set([...rightHands, ...allModelClaimed]))
 
       const count = result.landmarks.length
       setStatus(
         count === 0
-          ? 'M5 — show your hands'
+          ? 'show both hands · left = navigate · right = sculpt/draw'
           : bubbleIntent.isActive
-            ? 'M5 — bubble active · cage on shell · sculpt inside · poke to dismiss'
+            ? 'bubble · ✌ resize · pinch shell = move · poke to dismiss'
             : sculpted.size
-              ? 'M5 — sculpting'
+              ? 'sculpting'
               : createIntent.isDrawing
-                ? 'M5 — drawing'
-                : 'M5 — point to draw · loop to bubble · pinch surface to sculpt · grab sphere',
+                ? 'drawing'
+                : '☝ draw coil · ✌ loop bubble · pinch surface · left hand = sphere',
       )
     }
 

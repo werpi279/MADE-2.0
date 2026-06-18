@@ -15,12 +15,15 @@ interface HandTrack {
   state: HandState
   prevPos: Vector3
   prevDist: number
-  // True while a pinch session is live; hand stays claimed until pinch releases (Bug 3 fix)
   engagedPinch: boolean
+  // Surface hit.point recorded on first pinch frame; used as stable deform center so
+  // the clay pull stays anchored to where the hand originally grabbed (not the current
+  // closest surface point, which shifts as the surface deforms outward).
+  grabPoint: Vector3
 }
 
 function makeTrack(): HandTrack {
-  return { state: 'idle', prevPos: new Vector3(), prevDist: 0, engagedPinch: false }
+  return { state: 'idle', prevPos: new Vector3(), prevDist: 0, engagedPinch: false, grabPoint: new Vector3() }
 }
 
 export class SculptIntent {
@@ -142,18 +145,26 @@ export class SculptIntent {
           track.state = 'idle'
         } else {
           claimed.add(h)
-          const hit = this.engine.query(localPos[h])
           const openness = handOpenness(lms[h])
-          const falloff = MIN_FALLOFF + openness * (MAX_FALLOFF - MIN_FALLOFF)
-          // Center deformation on surface hit point — palm center can be inside the
-          // mesh and would cover all vertices with its falloff radius (Bug 2 fix).
-          const delta = localPos[h].clone().sub(track.prevPos)
-          if (delta.length() > 0.001) {
-            this.engine.deform(hit.point, delta, falloff, mask ?? undefined)
+          const baseFalloff = MIN_FALLOFF + openness * (MAX_FALLOFF - MIN_FALLOFF)
+          // Falloff grows as the hand moves further from the original grab point so
+          // more material "comes along" the farther you pull (clay-follow feel).
+          const pullDist = localPos[h].distanceTo(track.grabPoint)
+          const activeFalloff = baseFalloff + pullDist * 0.5
+          // Dampen z: MediaPipe z is noisy and causes spurious inward deltas.
+          const delta = new Vector3(
+            localPos[h].x - track.prevPos.x,
+            localPos[h].y - track.prevPos.y,
+            (localPos[h].z - track.prevPos.z) * 0.3,
+          )
+          if (delta.length() > 0.003) {
+            // Deform centred on the ORIGINAL grab point, not the current surface.
+            // This keeps the pulled "nose" anchored and grows outward consistently.
+            this.engine.deform(track.grabPoint, delta, activeFalloff, mask ?? undefined)
           }
           track.prevPos = localPos[h].clone()
           track.state = 'sculpting'
-          if (!blobPos) { blobPos = hit.point; blobRadius = falloff }
+          if (!blobPos) { blobPos = track.grabPoint; blobRadius = activeFalloff }
         }
         continue
       }
@@ -175,13 +186,13 @@ export class SculptIntent {
         track.state = 'hovering'
         track.prevPos = localPos[h].clone()
       } else {
-        // First pinch frame: begin session and record position — no deform yet.
-        // Deform starts next frame only after real movement (Bug 2 fix: prevents
-        // spurious inward delta from the hover→pinch state transition).
+        // First pinch frame: begin session, store surface contact, no deform yet.
+        // Deform starts next frame only after real movement (prevents spurious
+        // inward delta from the hover→pinch state transition).
         track.engagedPinch = true
-        track.state  = 'sculpting'
-        track.prevPos = localPos[h].clone()
-        // (mask will be applied from next frame onward via the engagedPinch path)
+        track.state     = 'sculpting'
+        track.prevPos   = localPos[h].clone()
+        track.grabPoint = hit.point.clone()  // anchor for pull deformation
       }
     }
 

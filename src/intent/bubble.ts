@@ -1,6 +1,6 @@
 import { Vector3, Group } from 'three'
 import type { HandLandmarkerResult } from '../tracking/handLandmarker'
-import { isPointing, isPinch, isCupPose, handOpenness } from '../recognizer/gestures'
+import { isPointing, isPinch, isCupPose, isTwoFingerPoint } from '../recognizer/gestures'
 import { landmarkToScene, handToScene } from '../mapping/volume'
 import { BubbleRegion } from '../geometry/bubble'
 import { BubbleViz } from '../feedback/bubbleViz'
@@ -72,9 +72,11 @@ export class BubbleIntent {
       for (let h = 0; h < Math.min(lms.length, 2); h++) {
         if (skipHands.has(h)) continue
 
-        const pointing = isPointing(lms[h]) && !isPinch(lms[h])
+        // Two-finger "peace/V" gesture starts a bubble loop; mutually exclusive
+        // with single-finger isPointing (coil), so both can coexist without conflict.
+        const twoFinger = isTwoFingerPoint(lms[h])
 
-        if (this.state === 'idle' && pointing) {
+        if (this.state === 'idle' && twoFinger) {
           this.state = 'drawing'
           this.drawingHand = h
           this.loopPath = [landmarkToScene({ x: lms[h][8].x, y: lms[h][8].y, z: 0 })]
@@ -83,9 +85,9 @@ export class BubbleIntent {
         }
 
         if (this.state === 'drawing' && h === this.drawingHand) {
-          claimed.add(h)  // hold the hand so CreateIntent doesn't also draw a coil
+          claimed.add(h)
 
-          if (!pointing) {
+          if (!twoFinger) {
             this._abortDraw()
             break
           }

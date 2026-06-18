@@ -49,6 +49,20 @@ export function thumbIndexRadius(lm: NormalizedLandmark[]): number {
 }
 
 /**
+ * Index AND middle fingers extended, ring/pinky curled — the "peace / V sign".
+ * Used for bubble loop drawing, mutually exclusive with isPointing (single finger).
+ */
+export function isTwoFingerPoint(lm: NormalizedLandmark[]): boolean {
+  const cx = (lm[0].x + lm[5].x + lm[17].x) / 3
+  const cy = (lm[0].y + lm[5].y + lm[17].y) / 3
+  const indexDist  = Math.hypot(lm[8].x  - cx, lm[8].y  - cy)
+  const middleDist = Math.hypot(lm[12].x - cx, lm[12].y - cy)
+  const ringDist   = Math.hypot(lm[16].x - cx, lm[16].y - cy)
+  const pinkyDist  = Math.hypot(lm[20].x - cx, lm[20].y - cy)
+  return indexDist > 0.17 && middleDist > 0.16 && ringDist < 0.13 && pinkyDist < 0.11
+}
+
+/**
  * Two open palms cradling the object: both hands open, neither pinching or pointing.
  * Used to distinguish uniform scale (cup object) from axis stretch (grip two sides).
  */

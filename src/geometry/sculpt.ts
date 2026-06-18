@@ -2,7 +2,7 @@ import { Mesh, Vector3 } from 'three'
 import { MeshBVH } from 'three-mesh-bvh'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
-const SCULPT_STRENGTH = 0.45
+const SCULPT_STRENGTH = 0.80
 const SMOOTH_WEIGHT   = 0.3
 const SMOOTH_ITERS    = 1
 
