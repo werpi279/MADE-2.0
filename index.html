@@ -86,6 +86,23 @@
       #splash h1 { font-size: 3rem; letter-spacing: 0.2em; color: #a0c4ff; }
       #splash p  { font-size: 1rem; opacity: 0.6; max-width: 380px; text-align: center; }
       #splash.hidden { opacity: 0; pointer-events: none; }
+
+      #reset-btn {
+        position: absolute;
+        top: 1.2rem;
+        right: 1.2rem;
+        background: transparent;
+        border: 1px solid #a0c4ff44;
+        color: #a0c4ff88;
+        padding: 0.35em 0.85em;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-family: system-ui, sans-serif;
+        z-index: 4;
+        transition: border-color 0.15s, color 0.15s;
+      }
+      #reset-btn:hover { border-color: #a0c4ffbb; color: #a0c4ff; }
     </style>
   </head>
   <body>
@@ -97,6 +114,8 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="scene"></canvas>
     <canvas id="overlay"></canvas>
+
+    <button id="reset-btn">&#x21BA; reset view</button>
 
     <div id="hud">
       <h1>MADE</h1>

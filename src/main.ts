@@ -11,12 +11,13 @@ import { NavigationIntent } from './intent/navigate'
 import { CreateIntent } from './intent/create'
 import { SculptIntent } from './intent/sculpt'
 
-const splash   = document.getElementById('splash')  as HTMLDivElement
-const video    = document.getElementById('video')   as HTMLVideoElement
-const sceneEl  = document.getElementById('scene')   as HTMLCanvasElement
-const overlay  = document.getElementById('overlay') as HTMLCanvasElement
-const statusEl = document.getElementById('status')  as HTMLDivElement
-const ctx2d    = overlay.getContext('2d')!
+const splash    = document.getElementById('splash')     as HTMLDivElement
+const video     = document.getElementById('video')      as HTMLVideoElement
+const sceneEl   = document.getElementById('scene')      as HTMLCanvasElement
+const overlay   = document.getElementById('overlay')    as HTMLCanvasElement
+const statusEl  = document.getElementById('status')     as HTMLDivElement
+const resetBtn  = document.getElementById('reset-btn')  as HTMLButtonElement
+const ctx2d     = overlay.getContext('2d')!
 
 function setStatus(msg: string): void { statusEl.textContent = msg }
 
@@ -44,6 +45,12 @@ async function main(): Promise<void> {
   workpiece.add(blob.object)      // blob in workpiece local space
 
   scene.add(workpiece)
+
+  resetBtn.addEventListener('click', () => {
+    workpiece.position.set(0, 0, 0)
+    workpiece.rotation.set(0, 0, 0)
+    workpiece.scale.set(1, 1, 1)
+  })
 
   // Camera and model load first — nothing should block permission request
   const createIntent = new CreateIntent(workpiece)
